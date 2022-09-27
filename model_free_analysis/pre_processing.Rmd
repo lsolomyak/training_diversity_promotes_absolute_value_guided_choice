@@ -1,0 +1,79 @@
+---
+title: "Pre-processing data"
+output: html_notebook
+---
+
+Load in the data 
+
+```{r}
+# set required packages 
+require("RSQLite")
+require("dplyr")
+require("ggplot2")
+require("zoo")
+require("gridExtra")
+require("ggpubr")
+require("tidyr")
+library("stringr")
+
+
+setwd('/Volumes/GoogleDrive/My Drive/Common lab folder/Context_Reward/Analysis/EEG_Quality_Checks/Data_Raw/') #directory where the data files are located
+
+# load in all the data files 
+db_files <- list.files(  path='/Volumes/GoogleDrive/My Drive/Common lab folder/Context_Reward/Analysis/EEG_Quality_Checks/Data_Raw/',  # Specify path
+                         pattern = "\\_schedule.db$",
+                         recursive=TRUE,no.. = FALSE)
+
+
+numextract <- function(string){ 
+   str_extract(string, "\\-*\\d+\\.*\\d*")
+} 
+
+
+
+trialFiles<- list()
+stimuliFiles <- list()
+subject_names <-c()
+for(i in 1:length(db_files)){
+
+      if(grepl("^subject",db_files[[i]])){
+      data_1 = dbConnect(SQLite(),paste0('/Volumes/GoogleDrive/My Drive/Common lab folder/Context_Reward/Analysis/EEG_Quality_Checks/Data_Raw/',as.character(db_files[i])))
+      stimuliFiles[[i]] = dbGetQuery(data_1, "SELECT * FROM stimuli")
+      trialFiles[[i]] = dbGetQuery(data_1, "SELECT * FROM trials")
+      subject_names[i] <- as.numeric(numextract(db_files[i]))
+      
+}
+
+}
+trialFiles <- trialFiles[lengths(trialFiles) != 0]
+subject_names <- subject_names[ !is.na(subject_names)]
+
+
+# combine in to one large data set 
+source("/Volumes/GoogleDrive/My Drive/Common lab folder/model-fitting-master/Context/Context_Experiment/R Scripts/Old_Scripts/Pre_Processing/bind_with_id.R")
+Fulldata <- bind_with_id(trialFiles,subject_names,stimuliFiles)
+
+# remove unplayed games trials 
+if (length(which(is.na(Fulldata$choice)))!=0){
+ Fulldata=Fulldata[-c(which(is.na(Fulldata$choice))),]}
+
+# remove practice and fMRI blocks 
+Fulldata <- Fulldata %>% filter(block>12,block<99,stim1<64,stim2<64)
+# add conditions rank and remove mixed condition trials - everyone has the same stimuli file so we select one 
+Fulldata <- Fulldata %>% mutate(condition_left=stimuliFiles[[10]]$condition[Fulldata$stim1+1],condition_right=stimuliFiles[[10]]$condition[Fulldata$stim2+1],rank_left=stimuliFiles[[10]]$rank[Fulldata$stim1+1],rank_right=stimuliFiles[[10]]$rank[Fulldata$stim2+1]) %>% 
+filter(condition_left==condition_right)
+#add difficulty and chosen 
+Fulldata <- Fulldata %>% mutate(difficulty=abs(relative_stim1-relative_stim2)) %>%  mutate(Chosen=ifelse(choice==1,stim2,stim1))
+
+No_feedback <- Fulldata %>% filter(feedback==0)
+
+```
+  
+Now we are done with pre-processing we can analyze perofmrnace 
+
+```{r}
+# has a lot of relevant functions we will need for our analysis 
+source("/Volumes/GoogleDrive/.shortcut-targets-by-id/1Q_4mk30lNgQEwl8b_lkVuLVurHtWEvzj/Common lab folder/model-fitting-master/Context/Context_Git/All_Relevant_Functions.R")
+```
+
+  
